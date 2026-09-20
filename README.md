@@ -84,6 +84,6 @@ docs/DESIGN.md    design record
 
 ## Status and honesty
 
-Prototype, built in one day as a zero-to-one demonstration. Not production: sessions are demo tokens without passwords, the rule planner covers the example vocabulary, and the local embedder is a stand-in for a real model. The architecture — tenant derivation, allow-listed queries, scoped semantic retrieval, independent citations, chained audit — is the part intended to survive into production unchanged.
+Prototype, zero-to-one demonstration. Not production: sessions are demo tokens without passwords, the rule planner covers the example vocabulary, and the local embedder is a stand-in for a real model. The architecture — tenant derivation, allow-listed queries, scoped semantic retrieval, independent citations, chained audit — is the part intended to survive into production unchanged.
 
 © 2026 Chris Smith / SentinelPoT. Provided for evaluation.
