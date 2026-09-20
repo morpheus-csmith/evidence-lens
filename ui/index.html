@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EvidenceLens — prototype</title>
+<style>
+:root{--ink:#0A0D12;--ink2:#10151C;--line:#1E2631;--text:#E6EAF0;--muted:#8A94A6;--amber:#D9A441;--ok:#3FBF7F;--bad:#E5484D;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--ink);color:var(--text);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;gap:16px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--ink2)}
+header b{color:var(--amber)}header .sp{flex:1}select,button,input,textarea{font:inherit}
+select,input,textarea{background:#0d1219;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+button{background:var(--text);color:#000;border:0;border-radius:6px;padding:8px 14px;font-weight:600;cursor:pointer}button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+main{display:grid;grid-template-columns:280px 1fr 340px;gap:0;min-height:calc(100vh - 57px)}
+aside,section{padding:18px;border-right:1px solid var(--line)}section{border-right:0}
+.k{font:11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.ex{display:block;width:100%;text-align:left;background:transparent;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-weight:400}.ex:hover{border-color:var(--muted)}
+textarea{width:100%;min-height:64px}.row{display:flex;gap:8px;margin-top:8px}
+.card{background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:14px;margin-top:12px}
+pre{font:12px var(--mono);white-space:pre-wrap;margin:0;color:#c9d1dc}
+.narr{white-space:pre-wrap}.cite{font:12px var(--mono);display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
+.cite .h{color:var(--amber)}.tag{font:11px var(--mono);padding:2px 6px;border-radius:4px;border:1px solid var(--line);color:var(--muted)}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.aud{font:12px var(--mono);padding:8px 0;border-top:1px solid var(--line)}.aud small{color:var(--muted)}
+.mode{font:11px var(--mono);color:var(--muted)}
+@media(max-width:1000px){main{grid-template-columns:1fr}aside,section{border-right:0;border-bottom:1px solid var(--line)}}
+</style></head><body>
+<header><b>◇ EvidenceLens</b><span class="mode" id="mode"></span><span class="sp"></span>
+  <label>Acting as <select id="who"></select></label><button class="ghost" id="login">Sign in</button></header>
+<main>
+  <aside>
+    <p class="k">Example questions</p>
+    <div id="examples"></div>
+    <p class="k" style="margin-top:18px">Cross-tenant attempt</p>
+    <button class="ex" data-q="Why was A-1042 approved?">Ask about A-1042 (Harbor Capital record) →</button>
+    <p class="mode">Sign in as a Northbridge or Westford user first. The request is refused without confirming the record exists, and the attempt appears in that tenant's audit trail.</p>
+  </aside>
+  <section>
+    <p class="k">Ask the log</p>
+    <textarea id="q" placeholder="Why was A-2003 approved, and which policy section authorized the wide search?"></textarea>
+    <div class="row"><button id="ask">Ask</button><button class="ghost" id="rerun" title="Re-execute the last stored query verbatim">Re-run last query</button><span class="mode" id="status"></span></div>
+    <div id="out"></div>
+  </section>
+  <aside>
+    <p class="k">Audit trail <span class="tag">compliance only</span></p>
+    <div id="audit"><span class="mode">Sign in as a compliance officer to view.</span></div>
+  </aside>
+</main>
+<script>
+const $=id=>document.getElementById(id);let token=null,lastQuery=null,me=null;
+const EX=["Why was A-2003 approved, and which policy section authorized the wide search?","Which searches ran without a case number?","Show blocked shares and the policy language that prohibits them.","Which actions failed the read confidence check?","Show transfers over $1,000,000 and who approved them.","What does the retention policy require?","Which actions were escalated in August 2026?","Why was A-1046 blocked?"];
+$("examples").innerHTML=EX.map(e=>`<button class="ex" data-q="${e.replace(/"/g,'&quot;')}">${e}</button>`).join("");
+document.querySelectorAll(".ex").forEach(b=>b.onclick=()=>{$("q").value=b.dataset.q;ask();});
+async function api(path,body,method){const r=await fetch(path,{method:method||(body?"POST":"GET"),headers:{"content-type":"application/json",...(token?{authorization:"Bearer "+token}:{})},body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()};}
+(async()=>{const {data}=await api("/api/users");$("who").innerHTML=data.users.map(u=>`<option value="${u.id}">${u.tenant} — ${u.name} [${u.role}]</option>`).join("");$("mode").textContent="store="+data.mode.store+" · planner="+data.mode.planner+" · embedder="+data.mode.embedder;})();
+$("login").onclick=async()=>{const {data}=await api("/api/login",{userId:$("who").value});token=data.token;const m=await api("/api/me");me=m.data;$("status").textContent="signed in as "+me.principal.name+" @ "+me.tenant.name;$("out").innerHTML="";loadAudit();};
+async function ask(q){if(!token){$("status").textContent="sign in first";return;}const body=q?{query:q}:{question:$("q").value};$("status").textContent="…";const {data}=await api("/api/ask",body);render(data);loadAudit();}
+$("ask").onclick=()=>ask();$("rerun").onclick=()=>lastQuery&&ask(lastQuery);
+function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+function render(a){lastQuery=a.query;$("status").textContent=a.ok?("answered · chain "+(a.chainVerified?"verified":"NOT verified")+" · audit "+a.auditId.slice(0,8)):"refused";
+ let h=`<div class="card"><p class="k">${a.ok?'<span class="ok">Answer</span>':'<span class="bad">Refused</span>'}</p><div class="narr">${esc(a.narrative)}</div></div>`;
+ if(a.citations.length){h+=`<div class="card"><p class="k">Citations · ${a.citations.length}</p>`+a.citations.map(c=>`<div class="cite"><span>${esc(c.label)}</span><span class="h" title="${c.hash}">${c.kind==="attestation"?"sha256:":"§ "}${c.hash.slice(0,16)}…</span></div>`).join("")+`</div>`;}
+ h+=`<div class="card"><p class="k">Query executed (reproducible)</p><pre>${esc(JSON.stringify(a.query,null,1))}</pre></div>`;
+ if(a.records.length){h+=`<div class="card"><p class="k">Records · ${a.records.length}</p>`+a.records.map(r=>`<div class="cite"><span>${r.id} · ${r.action} · <span class="${r.disposition==="BLOCKED"?"bad":r.disposition==="APPROVED"?"ok":""}">${r.disposition}</span> · ${r.timestamp.slice(0,10)}</span><span class="h">${r.hash.slice(0,12)}…</span></div>`).join("")+`</div>`;}
+ $("out").innerHTML=h;}
+async function loadAudit(){if(!me)return;if(me.principal.role!=="compliance"){$("audit").innerHTML='<span class="mode">Sign in as a compliance officer to view.</span>';return;}const {data}=await api("/api/audit");$("audit").innerHTML=(data.audits||[]).slice().reverse().map(x=>`<div class="aud"><span class="${x.outcome==="ANSWERED"?"ok":"bad"}">${x.outcome}</span> · ${x.userId} [${x.role}]<br>${esc(x.question)}<br><small>${x.recordIds.length} records · ${x.timestamp.slice(11,19)}Z · ${x.hash.slice(0,10)}…${x.reason?"<br>"+esc(x.reason):""}</small></div>`).join("")||'<span class="mode">No queries yet.</span>';}
+</script></body></html>
